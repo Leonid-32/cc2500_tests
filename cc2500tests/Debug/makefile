@@ -60,8 +60,8 @@ all: main-build
 main-build: cc2500tests.elf secondary-outputs
 
 # Tool invocations
-cc2500tests.elf cc2500tests.map: $(OBJS) $(USER_OBJS) C:\Users\denne\Desktop\cc2500tests\STM32L452CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "cc2500tests.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\denne\Desktop\cc2500tests\STM32L452CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="cc2500tests.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+cc2500tests.elf cc2500tests.map: $(OBJS) $(USER_OBJS) C:\Users\denne\Documents\GitHub\cc2500_tests\cc2500tests\STM32L452CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "cc2500tests.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\denne\Documents\GitHub\cc2500_tests\cc2500tests\STM32L452CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="cc2500tests.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
