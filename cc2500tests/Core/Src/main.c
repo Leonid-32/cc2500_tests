@@ -657,21 +657,19 @@ int main(void)
 
         while (1)
         {
-            // Clear the buffer so trailing unused bytes aren't random garbage
             memset(tx_pkt, 0, sizeof(tx_pkt));
 
-            // Set the explicit payload length byte (16 bytes of data follow)
-            tx_pkt[0] = 16;
+            // Define exactly how many bytes of actual payload we want to send
+            uint8_t payload_len = 16;
+            tx_pkt[0] = payload_len;
 
-            // Safely format the string into indices tx_pkt[1] through tx_pkt[16]
-            snprintf((char *)&tx_pkt[1], 16, "Pkt %010lu", count++);
+            // Use payload_len + 1 (or sizeof(tx_pkt) - 1) to allow snprintf to use all 16 slots for data
+            snprintf((char *)&tx_pkt[1], payload_len + 1, "Pkt %010lu", count++);
 
-            // Transmit the 1 length byte + 16 payload bytes
-            CC2500_TransmitPacket(tx_pkt, 17);
+            // Transmit total size: 1 length byte + 16 payload bytes = 17 bytes
+            CC2500_TransmitPacket(tx_pkt, payload_len + 1);
 
-            // Blink the LED on every transmission burst for visual confirmation
             HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
-
             HAL_Delay(200);
         }
 
