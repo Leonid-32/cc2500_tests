@@ -203,23 +203,26 @@ static const char *marcstate_str(uint8_t s);
 
 void CC2500_WriteReg(uint8_t addr, uint8_t val)
 {
-    uint8_t buf[2] = { addr & 0x3F, val };
+    uint8_t tx_buf[2] = { addr & 0x3F, val };
+    uint8_t rx_buf[2]; // Captures and flushes the incoming bytes automatically
+
     CC2500_CS_LOW();
-    HAL_SPI_Transmit(&hspi1, buf, 2, HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, 2, HAL_MAX_DELAY);
     CC2500_CS_HIGH();
 }
+
 uint8_t CC2500_ReadReg(uint8_t addr)
 {
     uint8_t tx = (addr >= 0x30) ? (addr | CC2500_READ | CC2500_BURST)
                                 : (addr | CC2500_READ);
-    uint8_t rx = 0;
+    uint8_t tx_buf[2] = { tx, 0x00 };
+    uint8_t rx_buf[2] = { 0, 0 };
 
     CC2500_CS_LOW();
-    HAL_SPI_Transmit(&hspi1, &tx, 1, HAL_MAX_DELAY);
-    HAL_SPI_Receive(&hspi1, &rx, 1, HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, 2, HAL_MAX_DELAY);
     CC2500_CS_HIGH();
 
-    return rx;
+    return rx_buf[1]; // The second byte contains the clean, real-time register data
 }
 
 uint8_t CC2500_Strobe(uint8_t cmd)
@@ -233,25 +236,34 @@ uint8_t CC2500_Strobe(uint8_t cmd)
 
 void CC2500_WriteBurst(uint8_t addr, const uint8_t *data, uint8_t len)
 {
-    uint8_t hdr = (addr & 0x3F) | CC2500_BURST;
+    uint8_t tx_buf[65];
+    uint8_t rx_buf[65];
+    if (len > 64) len = 64;
+
+    tx_buf[0] = (addr & 0x3F) | CC2500_BURST;
+    memcpy(&tx_buf[1], data, len);
+
     CC2500_CS_LOW();
-    HAL_SPI_Transmit(&hspi1, &hdr, 1, HAL_MAX_DELAY);
-    HAL_SPI_Transmit(&hspi1, (uint8_t*)data, len, HAL_MAX_DELAY);
+    // Transmit and receive simultaneously to prevent internal MCU FIFO overflow
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, len + 1, HAL_MAX_DELAY);
     CC2500_CS_HIGH();
 }
 
 void CC2500_ReadBurst(uint8_t addr, uint8_t *data, uint8_t len)
 {
-    uint8_t hdr = addr | CC2500_READ | CC2500_BURST;
-    uint8_t dummy[64];
-    memset(dummy, 0xFF, len);
+    uint8_t tx_buf[65];
+    uint8_t rx_buf[65];
+    if (len > 64) len = 64;
+
+    memset(tx_buf, 0x00, len + 1);
+    tx_buf[0] = addr | CC2500_READ | CC2500_BURST;
 
     CC2500_CS_LOW();
-    HAL_SPI_Transmit(&hspi1, &hdr, 1, HAL_MAX_DELAY);
-    HAL_SPI_TransmitReceive(&hspi1, dummy, data, len, HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, len + 1, HAL_MAX_DELAY);
     CC2500_CS_HIGH();
-}
 
+    memcpy(data, &rx_buf[1], len);
+}
 /* ════════════════════════════════════════════════════════════════════════════
  *  MID-LEVEL HELPERS
  * ════════════════════════════════════════════════════════════════════════════ */
@@ -279,13 +291,13 @@ uint8_t CC2500_WaitIdle(uint32_t timeout_ms)
 static const char *marcstate_str(uint8_t s)
 {
     switch (s) {
-        case 0x00: return "SLEEP";
-        case 0x01: return "IDLE";
-        case 0x0D: return "RX";
-        case 0x13: return "TX";
-        case 0x15: return "TX_UNDERFLOW";
-        case 0x17: return "RX_OVERFLOW";
-        default:   return "UNKNOWN";
+    		case 0x00: return "SLEEP";
+            case 0x01: return "IDLE";
+            case 0x0D: return "RX";
+            case 0x11: return "RX_OVERFLOW";
+            case 0x13: return "TX";
+            case 0x16: return "TX_UNDERFLOW";
+            default:   return "UNKNOWN";
     }
 }
 
@@ -389,13 +401,13 @@ void CC2500_TransmitPacket(const uint8_t *data, uint8_t len)
 
     // Post-transmit validation to handle unexpected RF locks
     uint8_t post_state = CC2500_ReadReg(REG_MARCSTATE) & 0x1F;
-    if (post_state == 0x15) { // 0x15 = TX_UNDERFLOW
-        printf("TX Error: UNDERFLOW! Resetting TX FIFO...\r\n");
-        CC2500_Strobe(STROBE_SIDLE);
-        CC2500_Strobe(STROBE_SFTX);
-    } else {
-        printf("TX OK\r\n");
-    }
+        if (post_state == 0x16) { // FIXED: 0x16 = TX_UNDERFLOW
+            printf("TX Error: UNDERFLOW! Resetting TX FIFO...\r\n");
+            CC2500_Strobe(STROBE_SIDLE);
+            CC2500_Strobe(STROBE_SFTX);
+        } else {
+            printf("TX OK\r\n");
+        }
 }
 /* ════════════════════════════════════════════════════════════════════════════
  *  RECEIVE LOOP  (blocking)
@@ -434,14 +446,14 @@ void CC2500_ReceiveLoop(void)
 
         // Handle hardware overflow conditions safely
         uint8_t state = CC2500_ReadReg(REG_MARCSTATE) & 0x1F;
-        if (state == 0x17) // 0x17 = RX_OVERFLOW
-        {
-            printf("[RX] Overflow encountered! Purging...\r\n");
-            CC2500_Strobe(STROBE_SIDLE);
-            CC2500_Strobe(STROBE_SFRX);
-            CC2500_Strobe(STROBE_SRX);
-            continue;
-        }
+                if (state == 0x11)
+                {
+                    printf("[RX] Overflow encountered! Purging...\r\n");
+                    CC2500_Strobe(STROBE_SIDLE);
+                    CC2500_Strobe(STROBE_SFRX);
+                    CC2500_Strobe(STROBE_SRX);
+                    continue;
+                }
 
         if (rxbytes == 0)
         {
@@ -599,7 +611,7 @@ int main(void)
     MX_DMA_Init();
     MX_CAN1_Init();
     MX_I2C1_Init();
-    MX_IWDG_Init();
+//    MX_IWDG_Init();
     MX_SPI1_Init();
     MX_USART1_UART_Init();
 
@@ -639,14 +651,29 @@ int main(void)
 
     // ── TRANSMITTER MODE ──
     printf("\r\n[TX] Continuous transmit @ 200 ms...\r\n");
-    uint8_t tx_pkt[17];
-    tx_pkt[0] = 16;
-    uint32_t count = 0;
-    while (1) {
-        snprintf((char *)&tx_pkt[1], 16, "Pkt %010lu", count++);
-        CC2500_TransmitPacket(tx_pkt, 17);
-        HAL_Delay(200);
-    }
+
+        uint8_t tx_pkt[17];
+        uint32_t count = 0;
+
+        while (1)
+        {
+            // Clear the buffer so trailing unused bytes aren't random garbage
+            memset(tx_pkt, 0, sizeof(tx_pkt));
+
+            // Set the explicit payload length byte (16 bytes of data follow)
+            tx_pkt[0] = 16;
+
+            // Safely format the string into indices tx_pkt[1] through tx_pkt[16]
+            snprintf((char *)&tx_pkt[1], 16, "Pkt %010lu", count++);
+
+            // Transmit the 1 length byte + 16 payload bytes
+            CC2500_TransmitPacket(tx_pkt, 17);
+
+            // Blink the LED on every transmission burst for visual confirmation
+            HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+
+            HAL_Delay(200);
+        }
 
 
     /* USER CODE END 2 */
@@ -752,12 +779,12 @@ static void MX_I2C1_Init(void)
   */
 static void MX_IWDG_Init(void)
 {
-    hiwdg.Instance       = IWDG;
-    hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
-    hiwdg.Init.Window    = 4095;
-    hiwdg.Init.Reload    = 4095;
-    if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
-        Error_Handler();
+//    hiwdg.Instance       = IWDG;
+//    hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
+//    hiwdg.Init.Window    = 4095;
+//    hiwdg.Init.Reload    = 4095;
+//    if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+//        Error_Handler();
 }
 
 /**
