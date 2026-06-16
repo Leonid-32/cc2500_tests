@@ -19,8 +19,6 @@
 #include <string.h>
 #include <math.h>
 
-
-
 /* LED = PA4 */
 #define LED_PORT    GPIOA
 #define LED_PIN     GPIO_PIN_4
@@ -297,6 +295,14 @@ static const char *marcstate_str(uint8_t s)
 
 void CC2500_RFConfig(void)
 {
+    // FIX 2: Configure GDO pins explicitly to link hardware pins to the RF engine
+    // REG_IOCFG0 (Controls PB1/GDO0): 0x06 asserts on sync word match, deasserts at End-of-Packet
+    CC2500_WriteReg(REG_IOCFG0, 0x06);
+
+    // REG_IOCFG2 (Controls PB2/GDO2): 0x29 outputs CHIP_RDYn (low when crystal oscillator is stable)
+    CC2500_WriteReg(REG_IOCFG2, 0x29);
+
+    // Remaining RF Parameters
     CC2500_WriteReg(REG_FREQ2, 0x5D);
     CC2500_WriteReg(REG_FREQ1, 0x93);
     CC2500_WriteReg(REG_FREQ0, 0xB1);
@@ -311,7 +317,7 @@ void CC2500_RFConfig(void)
     CC2500_WriteReg(REG_PKTCTRL1, 0x04);
     CC2500_WriteReg(REG_PKTLEN, 60);
 
-    uint8_t pa[8] = {0x00,0xFE,0,0,0,0,0,0};
+    uint8_t pa[8] = {0x00, 0xFE, 0, 0, 0, 0, 0, 0};
     CC2500_WriteBurst(REG_PATABLE, pa, 8);
 }
 
@@ -372,9 +378,24 @@ void CC2500_TransmitPacket(const uint8_t *data, uint8_t len)
     CC2500_WriteBurst(REG_TXFIFO, data, len);
     CC2500_Strobe(STROBE_STX);
 
-    HAL_Delay(10);
+    // FIX 3: Dynamic hardware state tracking instead of a blind 10ms guess
+    uint32_t timeout = HAL_GetTick() + 50; // 50ms absolute safety ceiling
+    while ((CC2500_ReadReg(REG_MARCSTATE) & 0x1F) == MARCSTATE_TX) {
+        if (HAL_GetTick() > timeout) {
+            printf("TX Error: State machine timeout!\r\n");
+            break;
+        }
+    }
 
-    printf("TX OK\r\n");
+    // Post-transmit validation to handle unexpected RF locks
+    uint8_t post_state = CC2500_ReadReg(REG_MARCSTATE) & 0x1F;
+    if (post_state == 0x15) { // 0x15 = TX_UNDERFLOW
+        printf("TX Error: UNDERFLOW! Resetting TX FIFO...\r\n");
+        CC2500_Strobe(STROBE_SIDLE);
+        CC2500_Strobe(STROBE_SFTX);
+    } else {
+        printf("TX OK\r\n");
+    }
 }
 /* ════════════════════════════════════════════════════════════════════════════
  *  RECEIVE LOOP  (blocking)
@@ -394,17 +415,37 @@ void CC2500_ReceiveLoop(void)
 {
     printf("\r\nRX MODE START\r\n");
 
+    // FIX 1: Move initialization strobes OUTSIDE the infinite loop
+    CC2500_Strobe(STROBE_SIDLE);
+    CC2500_Strobe(STROBE_SFRX);
+    CC2500_Strobe(STROBE_SRX);
+
     while (1)
     {
-        CC2500_Strobe(STROBE_SIDLE);
-        CC2500_Strobe(STROBE_SFRX);
-        CC2500_Strobe(STROBE_SRX);
+        uint8_t rxbytes1 = 0, rxbytes2 = 0;
 
-        uint8_t rxbytes = CC2500_ReadReg(REG_RXBYTES) & 0x7F;
+        // FIX 4: Asynchronous clock domain double-read protection
+        do {
+            rxbytes1 = CC2500_ReadReg(REG_RXBYTES) & 0x7F;
+            rxbytes2 = CC2500_ReadReg(REG_RXBYTES) & 0x7F;
+        } while (rxbytes1 != rxbytes2);
 
-        if (rxbytes == 0 || rxbytes > 64)
+        uint8_t rxbytes = rxbytes1;
+
+        // Handle hardware overflow conditions safely
+        uint8_t state = CC2500_ReadReg(REG_MARCSTATE) & 0x1F;
+        if (state == 0x17) // 0x17 = RX_OVERFLOW
         {
-            HAL_Delay(5);
+            printf("[RX] Overflow encountered! Purging...\r\n");
+            CC2500_Strobe(STROBE_SIDLE);
+            CC2500_Strobe(STROBE_SFRX);
+            CC2500_Strobe(STROBE_SRX);
+            continue;
+        }
+
+        if (rxbytes == 0)
+        {
+            HAL_Delay(1); // Yield execution slightly to avoid thrashing the SPI bus
             continue;
         }
 
@@ -413,10 +454,13 @@ void CC2500_ReceiveLoop(void)
 
         uint8_t len = buf[0];
 
+        // Validate structure integrity of the dynamic buffer length byte
         if (len == 0 || len > 60 || len + 3 > rxbytes)
         {
-            printf("[RX] bad len %d\r\n", len);
+            printf("[RX] Corrupted frame parsed: len=%d, bytes=%d\r\n", len, rxbytes);
+            CC2500_Strobe(STROBE_SIDLE);
             CC2500_Strobe(STROBE_SFRX);
+            CC2500_Strobe(STROBE_SRX);
             continue;
         }
 
@@ -429,13 +473,16 @@ void CC2500_ReceiveLoop(void)
 
         int8_t rssi = (int8_t)(rssi_raw / 2) - 72;
 
-        printf("[RX] \"%.*s\" RSSI=%d LQI=%d CRC=%d\r\n",
-               len, payload, rssi, lqi, crc);
+        if (crc) {
+            printf("[RX] \"%.*s\" RSSI=%d dBm LQI=%d CRC=OK\r\n", len, payload, rssi, lqi);
+            HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+        } else {
+            printf("[RX] Bad CRC frame dropped\r\n");
+        }
 
-        HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
-
-        CC2500_Strobe(STROBE_SFRX);
-        HAL_Delay(1);
+        // Cleanly return to RX mode for next inbound packet
+        CC2500_Strobe(STROBE_SIDLE);
+        CC2500_Strobe(STROBE_SRX);
     }
 }
 
@@ -540,6 +587,15 @@ int main(void)
     SystemClock_Config();
 
     MX_GPIO_Init();
+    GPIO_InitTypeDef GPIO_InitStructPrivate = {0};
+      GPIO_InitStructPrivate.Pin   = CC2500_CS_PIN;
+      GPIO_InitStructPrivate.Mode  = GPIO_MODE_OUTPUT_PP;
+      GPIO_InitStructPrivate.Pull  = GPIO_NOPULL;
+      GPIO_InitStructPrivate.Speed = GPIO_SPEED_FREQ_VERY_HIGH; // Fast edges for clean SPI framing
+      HAL_GPIO_Init(CC2500_CS_PORT, &GPIO_InitStructPrivate);
+
+      // Immediately pull it high to finish the boot-glitch fix
+      CC2500_CS_HIGH();
     MX_DMA_Init();
     MX_CAN1_Init();
     MX_I2C1_Init();
