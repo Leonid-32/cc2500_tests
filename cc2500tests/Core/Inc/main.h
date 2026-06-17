@@ -59,16 +59,16 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define REG_3V3_AO_PG_Pin GPIO_PIN_13
 #define REG_3V3_AO_PG_GPIO_Port GPIOC
-#define TPS_STATUS_Pin GPIO_PIN_14
-#define TPS_STATUS_GPIO_Port GPIOC
-#define TEMP_ALARM_Pin GPIO_PIN_0
+#define TPS_STATUS_Pin GPIO_PIN_0
+#define TPS_STATUS_GPIO_Port GPIOA
+#define TEMP_ALARM_Pin GPIO_PIN_15
 #define TEMP_ALARM_GPIO_Port GPIOA
 #define CAN_LOOPBACK_EN_Pin GPIO_PIN_2
 #define CAN_LOOPBACK_EN_GPIO_Port GPIOA
 #define CAN_STANDBY_Pin GPIO_PIN_3
 #define CAN_STANDBY_GPIO_Port GPIOA
-#define CC2500_SS_Pin GPIO_PIN_4
-#define CC2500_SS_GPIO_Port GPIOA
+#define CC2500_SS_Pin GPIO_PIN_11
+#define CC2500_SS_GPIO_Port GPIOB
 #define ADF4371_SS_Pin GPIO_PIN_5
 #define ADF4371_SS_GPIO_Port GPIOA
 #define ADF4371_EN_Pin GPIO_PIN_0
@@ -77,23 +77,23 @@ void Error_Handler(void);
 #define CC2500_STATUS1_GPIO_Port GPIOB
 #define CC2500_STATUS2_Pin GPIO_PIN_2
 #define CC2500_STATUS2_GPIO_Port GPIOB
-#define REG_3V3_EN_Pin GPIO_PIN_10
-#define REG_3V3_EN_GPIO_Port GPIOB
-#define REG_2V0_EN_Pin GPIO_PIN_11
+#define REG_3V3_EN_Pin GPIO_PIN_15
+#define REG_3V3_EN_GPIO_Port GPIOC
+#define REG_2V0_EN_Pin GPIO_PIN_10
 #define REG_2V0_EN_GPIO_Port GPIOB
 #define REG_2V0_PG_Pin GPIO_PIN_14
 #define REG_2V0_PG_GPIO_Port GPIOB
 #define ADF4371_OSC_EN_Pin GPIO_PIN_15
 #define ADF4371_OSC_EN_GPIO_Port GPIOB
-#define POWER_ALARM_Pin GPIO_PIN_15
-#define POWER_ALARM_GPIO_Port GPIOA
-#define REG_6V5_PG_Pin GPIO_PIN_4
+#define POWER_ALARM_Pin GPIO_PIN_14
+#define POWER_ALARM_GPIO_Port GPIOC
+#define REG_6V5_PG_Pin GPIO_PIN_5
 #define REG_6V5_PG_GPIO_Port GPIOB
-#define REG_5V0_PG_Pin GPIO_PIN_5
+#define REG_5V0_PG_Pin GPIO_PIN_4
 #define REG_5V0_PG_GPIO_Port GPIOB
-#define REG_6V5_EN_Pin GPIO_PIN_8
+#define REG_6V5_EN_Pin GPIO_PIN_9
 #define REG_6V5_EN_GPIO_Port GPIOB
-#define REG_5V0_EN_Pin GPIO_PIN_9
+#define REG_5V0_EN_Pin GPIO_PIN_8
 #define REG_5V0_EN_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */

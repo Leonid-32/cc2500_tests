@@ -946,84 +946,149 @@ static void MX_GPIO_Init(void)
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
-    /* ── Output initial levels ── */
+    /* ---------------------------------------------------------------------
+     * Initial output levels
+     * ------------------------------------------------------------------ */
+
+    /* PA outputs */
     HAL_GPIO_WritePin(GPIOA,
-        CAN_LOOPBACK_EN_Pin | CAN_STANDBY_Pin | CC2500_SS_Pin | ADF4371_SS_Pin,
+        CAN_LOOPBACK_EN_Pin |
+        CAN_STANDBY_Pin     |
+        ADF4371_SS_Pin,
         GPIO_PIN_RESET);
 
+    /* PB outputs */
     HAL_GPIO_WritePin(GPIOB,
-        ADF4371_EN_Pin | REG_3V3_EN_Pin | REG_2V0_EN_Pin | ADF4371_OSC_EN_Pin
-        | REG_6V5_EN_Pin | REG_5V0_EN_Pin,
+        ADF4371_EN_Pin     |
+        REG_2V0_EN_Pin     |
+        ADF4371_OSC_EN_Pin |
+        REG_6V5_EN_Pin     |
+        REG_5V0_EN_Pin,
         GPIO_PIN_RESET);
 
-    /* LED = PA4, default OFF */
+    /* PC outputs */
+    HAL_GPIO_WritePin(REG_3V3_EN_GPIO_Port,
+                      REG_3V3_EN_Pin,
+                      GPIO_PIN_RESET);
+
+    /* Chip selects inactive */
+    HAL_GPIO_WritePin(CC2500_SS_GPIO_Port,
+                      CC2500_SS_Pin,
+                      GPIO_PIN_SET);
+
+    /* LED off */
     HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+
+    /* ---------------------------------------------------------------------
+     * LED (PA4)
+     * ------------------------------------------------------------------ */
     GPIO_InitStruct.Pin   = LED_PIN;
     GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull  = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(LED_PORT, &GPIO_InitStruct);
 
-    /* CC2500_SS = PA (mapped via CubeMX pin) — set HIGH before init to avoid glitch */
-    HAL_GPIO_WritePin(CC2500_CS_PORT, CC2500_CS_PIN, GPIO_PIN_SET);
+    /* ---------------------------------------------------------------------
+     * Inputs
+     * ------------------------------------------------------------------ */
 
-    /* REG_3V3_AO_PG — falling edge EXTI */
-    GPIO_InitStruct.Pin  = REG_3V3_AO_PG_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(REG_3V3_AO_PG_GPIO_Port, &GPIO_InitStruct);
-
-    /* TPS_STATUS — plain input */
+    /* TPS_STATUS */
     GPIO_InitStruct.Pin  = TPS_STATUS_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(TPS_STATUS_GPIO_Port, &GPIO_InitStruct);
 
-    /* TEMP_ALARM, POWER_ALARM — falling edge EXTI */
-    GPIO_InitStruct.Pin  = TEMP_ALARM_Pin | POWER_ALARM_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    /* POWER_ALARM (PC14)
+       NOTE: Cannot use EXTI because PB14 already uses EXTI14 */
+    GPIO_InitStruct.Pin  = POWER_ALARM_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_Init(POWER_ALARM_GPIO_Port, &GPIO_InitStruct);
 
-    /* CAN_LOOPBACK_EN, CAN_STANDBY, CC2500_SS, ADF4371_SS — outputs */
-    GPIO_InitStruct.Pin   = CAN_LOOPBACK_EN_Pin | CAN_STANDBY_Pin
-                          | CC2500_SS_Pin | ADF4371_SS_Pin;
-    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull  = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    /* ADF4371_EN, REG_3V3_EN, REG_2V0_EN, ADF4371_OSC_EN,
-       REG_6V5_EN, REG_5V0_EN — outputs */
-    GPIO_InitStruct.Pin   = ADF4371_EN_Pin | REG_3V3_EN_Pin | REG_2V0_EN_Pin
-                          | ADF4371_OSC_EN_Pin | REG_6V5_EN_Pin | REG_5V0_EN_Pin;
-    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull  = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    /* CC2500_STATUS1 (GDO1=PB1), CC2500_STATUS2 (GDO2=PB2) — plain inputs
-     * FIX: were IT_RISING; GDO polling is done in software, no EXTI needed */
+    /* CC2500 GDO pins */
     GPIO_InitStruct.Pin  = CC2500_STATUS1_Pin | CC2500_STATUS2_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* REG_2V0_PG, REG_6V5_PG, REG_5V0_PG — falling edge EXTI */
-    GPIO_InitStruct.Pin  = REG_2V0_PG_Pin | REG_6V5_PG_Pin | REG_5V0_PG_Pin;
+    /* ---------------------------------------------------------------------
+     * EXTI inputs
+     * ------------------------------------------------------------------ */
+
+    /* REG_3V3_AO_PG (PC13) */
+    GPIO_InitStruct.Pin  = REG_3V3_AO_PG_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(REG_3V3_AO_PG_GPIO_Port, &GPIO_InitStruct);
+
+    /* TEMP_ALARM (PA15) */
+    GPIO_InitStruct.Pin  = TEMP_ALARM_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(TEMP_ALARM_GPIO_Port, &GPIO_InitStruct);
+
+    /* REG_2V0_PG, REG_6V5_PG, REG_5V0_PG */
+    GPIO_InitStruct.Pin  =
+        REG_2V0_PG_Pin |
+        REG_6V5_PG_Pin |
+        REG_5V0_PG_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* PA8 — MCO output */
+    /* ---------------------------------------------------------------------
+     * Outputs - GPIOA
+     * ------------------------------------------------------------------ */
+    GPIO_InitStruct.Pin =
+        CAN_LOOPBACK_EN_Pin |
+        CAN_STANDBY_Pin     |
+        ADF4371_SS_Pin;
+    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull  = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* ---------------------------------------------------------------------
+     * Outputs - GPIOB
+     * ------------------------------------------------------------------ */
+    GPIO_InitStruct.Pin =
+        CC2500_SS_Pin       |
+        ADF4371_EN_Pin      |
+        REG_2V0_EN_Pin      |
+        ADF4371_OSC_EN_Pin  |
+        REG_6V5_EN_Pin      |
+        REG_5V0_EN_Pin;
+    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull  = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    /* ---------------------------------------------------------------------
+     * Outputs - GPIOC
+     * ------------------------------------------------------------------ */
+    GPIO_InitStruct.Pin   = REG_3V3_EN_Pin;
+    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull  = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    /* ---------------------------------------------------------------------
+     * PA8 MCO
+     * ------------------------------------------------------------------ */
     GPIO_InitStruct.Pin       = GPIO_PIN_8;
     GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull      = GPIO_NOPULL;
     GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF0_MCO;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-}
 
+    /* ---------------------------------------------------------------------
+     * EXTI NVIC
+     * ------------------------------------------------------------------ */
+
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+}
 /* USER CODE BEGIN 4 */
 /* USER CODE END 4 */
 
